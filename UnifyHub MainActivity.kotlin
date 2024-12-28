@@ -1,0 +1,223 @@
+package www.unifyhub.gov.unifyhub
+
+import android.os.Bundle
+import android.webkit.DownloadListener
+import android.webkit.WebChromeClient
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.ProgressBar
+import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var webView: WebView
+    private lateinit var progressBar: ProgressBar
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContentView(R.layout.activity_main)
+
+        // Configurar padding para respeitar os insets do sistema
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            insets
+        }
+
+        // Configuração do WebView
+        webView = findViewById(R.id.webview)
+        progressBar = findViewById(R.id.progressBar)
+
+        webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            allowContentAccess = true
+            allowFileAccess = true
+            javaScriptCanOpenWindowsAutomatically = true
+            builtInZoomControls = true
+            displayZoomControls = false
+            allowFileAccessFromFileURLs = true
+            allowUniversalAccessFromFileURLs = true
+            setSupportZoom(true)
+
+            // Desabilitar cache
+            cacheMode = WebSettings.LOAD_NO_CACHE
+
+            // Configurando o User Agent como Opera
+            userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/537.36 OPR/88.0.4412.85"
+        }
+
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView, newProgress: Int) {
+                super.onProgressChanged(view, newProgress)
+                if (newProgress < 100 && progressBar.visibility == ProgressBar.GONE) {
+                    progressBar.visibility = ProgressBar.VISIBLE
+                }
+                if (newProgress == 100) {
+                    progressBar.visibility = ProgressBar.GONE
+                }
+            }
+
+            // Exibir o WebView em tela cheia sem mudar a orientação
+            override fun onShowCustomView(view: android.view.View?, callback: WebChromeClient.CustomViewCallback?) {
+                super.onShowCustomView(view, callback)
+
+                // Exibir WebView em tela cheia dentro do layout atual sem forçar a rotação
+                val layoutParams = view?.layoutParams
+                view?.layoutParams = android.view.ViewGroup.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                findViewById<android.view.ViewGroup>(R.id.main).addView(view)
+
+                // Aqui, não fazemos nada para mudar a orientação
+                // Ou seja, continuamos no modo retrato (portrait).
+            }
+
+            override fun onHideCustomView() {
+                super.onHideCustomView()
+
+                // Retorna à orientação normal após sair da tela cheia
+                val parentView = findViewById<android.view.ViewGroup>(R.id.main)
+                parentView.removeViewAt(parentView.childCount - 1) // Remove a view da tela cheia
+            }
+        }
+
+        webView.webViewClient = WebViewClient()
+
+        // Adicionar o Download Manager para gerenciar downloads
+        webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
+            // Utilizar o DownloadManager para iniciar o download
+            val request = android.app.DownloadManager.Request(android.net.Uri.parse(url))
+            request.setMimeType(mimeType)
+            request.addRequestHeader("Referer", url)
+            request.setDescription("Downloading file...")
+            request.setTitle(contentDisposition)
+            request.setDestinationInExternalFilesDir(this, null, contentDisposition)
+            val downloadManager = getSystemService(DOWNLOAD_SERVICE) as android.app.DownloadManager
+            downloadManager.enqueue(request)
+        }
+
+        // Injetar JavaScript
+        injectJavaScripts()
+
+        // Carregar URL
+        webView.loadUrl("https://infinitycodegov.github.io/UnifyHub/")
+
+        // Definindo a cor da barra de status e navegação
+        window.statusBarColor = android.graphics.Color.parseColor("#39016A")
+        window.navigationBarColor = android.graphics.Color.parseColor("#39016A")
+    }
+
+    // Função para injetar múltiplos JavaScripts
+    private fun injectJavaScripts() {
+        val scripts = listOf(
+            """
+            document.addEventListener('DOMContentLoaded', function() {
+                document.querySelector('html').style.scrollBehavior = 'smooth';
+            });
+            """,
+            """
+            console.log('Título da página: ' + document.title);
+            """,
+            """
+            document.body.style.backgroundColor = '#f4f4f4';
+            """,
+            """
+            document.addEventListener('click', function(event) {
+                console.log('Clique detectado em: ' + event.target.tagName);
+            });
+            """,
+            """
+            document.addEventListener('DOMContentLoaded', function() {
+                let button = document.createElement('button');
+                button.innerText = 'Topo';
+                button.style.position = 'fixed';
+                button.style.bottom = '20px';
+                button.style.right = '20px';
+                button.style.padding = '10px';
+                button.style.backgroundColor = '#007BFF';
+                button.style.color = '#fff';
+                button.style.border = 'none';
+                button.style.borderRadius = '5px';
+                button.style.cursor = 'pointer';
+                button.onclick = function() {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                };
+                document.body.appendChild(button);
+            });
+            """,
+            """
+            document.addEventListener('gesturestart', function(e) {
+                e.preventDefault();
+            });
+            """,
+            """
+            document.addEventListener('DOMContentLoaded', function() {
+                let images = document.querySelectorAll('img');
+                images.forEach(function(img) {
+                    img.style.maxWidth = '100%';
+                    img.style.height = 'auto';
+                });
+            });
+            """,
+            """
+            window.onload = function() {
+                console.log('Página completamente carregada!');
+            };
+            """,
+            """
+            window.addEventListener('load', function() {
+                console.log('Tempo de carregamento da página: ' + performance.now() + 'ms');
+            });
+            """,
+            """
+            document.addEventListener('DOMContentLoaded', function() {
+                let darkModeButton = document.createElement('button');
+                darkModeButton.innerText = 'Modo Noturno';
+                darkModeButton.style.position = 'fixed';
+                darkModeButton.style.bottom = '60px';
+                darkModeButton.style.right = '20px';
+                darkModeButton.style.padding = '10px';
+                darkModeButton.style.backgroundColor = '#333';
+                darkModeButton.style.color = '#fff';
+                darkModeButton.style.border = 'none';
+                darkModeButton.style.borderRadius = '5px';
+                darkModeButton.style.cursor = 'pointer';
+                darkModeButton.onclick = function() {
+                    document.body.style.backgroundColor = '#121212';
+                    document.body.style.color = '#ffffff';
+                };
+                document.body.appendChild(darkModeButton);
+            });
+            """,
+            """
+            document.addEventListener('scroll', function() {
+                console.log('Posição de rolagem: ' + window.scrollY);
+            });
+            """,
+            """
+            document.body.style.userSelect = 'none';
+            document.body.style.webkitUserSelect = 'none';
+            document.body.style.msUserSelect = 'none';
+            """
+        )
+
+        for (script in scripts) {
+            webView.evaluateJavascript(script, null)
+        }
+    }
+
+    override fun onBackPressed() {
+        if (webView.canGoBack()) {
+            webView.goBack()
+        } else {
+            super.onBackPressed()
+        }
+    }
+}
