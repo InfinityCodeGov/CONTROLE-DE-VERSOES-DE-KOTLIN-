@@ -1,24 +1,31 @@
 package www.appvibe.com.unifyhub
 
-import android.content.Intent
+import android.annotation.SuppressLint
+import android.media.MediaPlayer
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.os.Bundle
+import android.os.*
 import android.webkit.*
+import android.widget.ImageView
 import android.widget.ProgressBar
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import java.net.InetSocketAddress
+import java.net.Socket
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
+    private lateinit var vibrator: Vibrator
+    private lateinit var connectivityManager: ConnectivityManager
+    private lateinit var imageView: ImageView
+    private var mediaPlayer: MediaPlayer? = null
 
+    @SuppressLint("MissingInflatedId")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
         setContentView(R.layout.activity_main)
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
@@ -29,8 +36,11 @@ class MainActivity : AppCompatActivity() {
 
         webView = findViewById(R.id.webview)
         progressBar = findViewById(R.id.progressBar)
+        imageView = findViewById(R.id.imageView)
 
-        // **Configurações do WebView**
+        vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
+        connectivityManager = getSystemService(ConnectivityManager::class.java)
+
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -39,8 +49,6 @@ class MainActivity : AppCompatActivity() {
             javaScriptCanOpenWindowsAutomatically = true
             builtInZoomControls = true
             displayZoomControls = false
-            allowFileAccessFromFileURLs = true
-            allowUniversalAccessFromFileURLs = true
             setSupportZoom(true)
             cacheMode = WebSettings.LOAD_NO_CACHE
             mediaPlaybackRequiresUserGesture = false
@@ -54,6 +62,7 @@ class MainActivity : AppCompatActivity() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
                 super.onProgressChanged(view, newProgress)
                 progressBar.visibility = if (newProgress < 100) ProgressBar.VISIBLE else ProgressBar.GONE
+                webView.visibility = if (newProgress == 100) WebView.VISIBLE else WebView.GONE
             }
         }
 
@@ -63,29 +72,55 @@ class MainActivity : AppCompatActivity() {
                 view?.evaluateJavascript("document.querySelectorAll('video').forEach(v => v.play());", null)
             }
 
+            // Removido: Não exibir imagem ao receber erro
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                 super.onReceivedError(view, request, error)
-                abrirTelaOffline() // Chama a tela OfflineActivity se houver erro de carregamento
             }
         }
 
-        webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
-            val request = android.app.DownloadManager.Request(android.net.Uri.parse(url))
-            request.setMimeType(mimeType)
-            request.addRequestHeader("Referer", url)
-            request.setDescription("Downloading file...")
-            request.setTitle(contentDisposition)
-            request.setDestinationInExternalFilesDir(this, null, contentDisposition)
-            val downloadManager = getSystemService(DOWNLOAD_SERVICE) as android.app.DownloadManager
-            downloadManager.enqueue(request)
-        }
+        Thread {
+            if (temInternetReal()) {
+                runOnUiThread {
+                    webView.loadUrl("https://infinitycodegov.github.io/Navegador-UnifyHub-/")
+                    webView.visibility = WebView.VISIBLE
+                    imageView.visibility = ImageView.GONE
+                    pararMusica()
+                }
+            } else {
+                runOnUiThread {
+                    vibrarDispositivo()
+                    mostrarImagemComMusica()
+                }
+            }
+        }.start()
 
-        // **Verifica se há conexão antes de carregar**
-        if (temInternet()) {
-            webView.loadUrl("https://infinitycodegov.github.io/Navegador-UnifyHub-/")
-        } else {
-            abrirTelaOffline()
-        }
+        connectivityManager.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                super.onAvailable(network)
+                Thread {
+                    if (temInternetReal()) {
+                        runOnUiThread {
+                            webView.loadUrl("https://infinitycodegov.github.io/Navegador-UnifyHub-/")
+                            webView.visibility = WebView.VISIBLE
+                            imageView.visibility = ImageView.GONE
+                            pararMusica()
+                        }
+                    }
+                }.start()
+            }
+
+            override fun onLost(network: android.net.Network) {
+                super.onLost(network)
+                Thread {
+                    if (!temInternetReal()) {
+                        runOnUiThread {
+                            vibrarDispositivo()
+                            mostrarImagemComMusica()
+                        }
+                    }
+                }.start()
+            }
+        })
 
         window.statusBarColor = android.graphics.Color.parseColor("#000000")
         window.navigationBarColor = android.graphics.Color.parseColor("#000000")
@@ -99,17 +134,38 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // **Método para verificar se há conexão com a internet**
-    private fun temInternet(): Boolean {
-        val connectivityManager = getSystemService(ConnectivityManager::class.java)
-        val network = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    private fun temInternetReal(): Boolean {
+        return try {
+            val socket = Socket()
+            socket.connect(InetSocketAddress("8.8.8.8", 53), 1500)
+            socket.close()
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
-    // **Método para abrir a tela OfflineActivity**
-    private fun abrirTelaOffline() {
-        startActivity(Intent(this, OfflineActivity::class.java))
-        finish()
+    private fun vibrarDispositivo() {
+        if (vibrator.hasVibrator()) {
+            val efeitoVibracao = VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE)
+            vibrator.vibrate(efeitoVibracao)
+        }
+    }
+
+    private fun mostrarImagemComMusica() {
+        webView.visibility = WebView.GONE
+        imageView.visibility = ImageView.VISIBLE
+        imageView.setImageResource(R.drawable.sem_internet)
+
+        if (mediaPlayer == null) {
+            mediaPlayer = MediaPlayer.create(this, R.raw.musica)
+            mediaPlayer?.isLooping = true
+            mediaPlayer?.start()
+        }
+    }
+
+    private fun pararMusica() {
+        mediaPlayer?.release()
+        mediaPlayer = null
     }
 }
