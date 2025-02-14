@@ -1,0 +1,115 @@
+package www.appvibe.com.unifyhub
+
+import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.Bundle
+import android.webkit.*
+import android.widget.ProgressBar
+import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var webView: WebView
+    private lateinit var progressBar: ProgressBar
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContentView(R.layout.activity_main)
+
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            insets
+        }
+
+        webView = findViewById(R.id.webview)
+        progressBar = findViewById(R.id.progressBar)
+
+        // **Configurações do WebView**
+        webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            allowContentAccess = true
+            allowFileAccess = true
+            javaScriptCanOpenWindowsAutomatically = true
+            builtInZoomControls = true
+            displayZoomControls = false
+            allowFileAccessFromFileURLs = true
+            allowUniversalAccessFromFileURLs = true
+            setSupportZoom(true)
+            cacheMode = WebSettings.LOAD_NO_CACHE
+            mediaPlaybackRequiresUserGesture = false
+            loadsImagesAutomatically = true
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            userAgentString =
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.0.0 Safari/537.36 OPR/88.0.4412.85"
+        }
+
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView, newProgress: Int) {
+                super.onProgressChanged(view, newProgress)
+                progressBar.visibility = if (newProgress < 100) ProgressBar.VISIBLE else ProgressBar.GONE
+            }
+        }
+
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                view?.evaluateJavascript("document.querySelectorAll('video').forEach(v => v.play());", null)
+            }
+
+            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                super.onReceivedError(view, request, error)
+                abrirTelaOffline() // Chama a tela OfflineActivity se houver erro de carregamento
+            }
+        }
+
+        webView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
+            val request = android.app.DownloadManager.Request(android.net.Uri.parse(url))
+            request.setMimeType(mimeType)
+            request.addRequestHeader("Referer", url)
+            request.setDescription("Downloading file...")
+            request.setTitle(contentDisposition)
+            request.setDestinationInExternalFilesDir(this, null, contentDisposition)
+            val downloadManager = getSystemService(DOWNLOAD_SERVICE) as android.app.DownloadManager
+            downloadManager.enqueue(request)
+        }
+
+        // **Verifica se há conexão antes de carregar**
+        if (temInternet()) {
+            webView.loadUrl("https://infinitycodegov.github.io/Navegador-UnifyHub-/")
+        } else {
+            abrirTelaOffline()
+        }
+
+        window.statusBarColor = android.graphics.Color.parseColor("#000000")
+        window.navigationBarColor = android.graphics.Color.parseColor("#000000")
+    }
+
+    override fun onBackPressed() {
+        if (webView.canGoBack()) {
+            webView.goBack()
+        } else {
+            super.onBackPressed()
+        }
+    }
+
+    // **Método para verificar se há conexão com a internet**
+    private fun temInternet(): Boolean {
+        val connectivityManager = getSystemService(ConnectivityManager::class.java)
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    // **Método para abrir a tela OfflineActivity**
+    private fun abrirTelaOffline() {
+        startActivity(Intent(this, OfflineActivity::class.java))
+        finish()
+    }
+}
