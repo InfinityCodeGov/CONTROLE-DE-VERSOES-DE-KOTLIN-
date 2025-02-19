@@ -1,0 +1,131 @@
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.DownloadManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Environment
+import android.view.KeyEvent
+import android.view.View
+import android.webkit.*
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.annotation.RequiresApi
+import androidx.appcompat.app.AppCompatActivity  
+import androidx.core.app.ActivityCompat
+
+class MainActivity : AppCompatActivity() {  
+
+    private lateinit var myWebView: WebView
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    @SuppressLint("SetJavaScriptEnabled")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+
+        myWebView = WebView(this)
+        setContentView(myWebView)
+
+        myWebView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            loadWithOverviewMode = true
+            useWideViewPort = true
+            allowFileAccess = true
+            allowContentAccess = true
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        }
+
+        // Configurando o WebChromeClient para permitir vídeos em tela cheia
+        myWebView.webChromeClient = object : WebChromeClient() {
+            override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                super.onShowCustomView(view, callback)
+                // A tela cheia do vídeo será exibida aqui
+                window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                supportActionBar?.hide()  // Agora funciona, pois AppCompatActivity tem suporte a ActionBar
+                view?.let {
+                    it.layoutParams = android.widget.FrameLayout.LayoutParams(
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                    setContentView(it)
+                }
+            }
+
+            override fun onHideCustomView() {
+                super.onHideCustomView()
+                // Quando o vídeo voltar ao modo normal
+                window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+                supportActionBar?.show()  // Mostra novamente a ActionBar
+                setContentView(R.layout.activity_main)
+            }
+        }
+
+        myWebView.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
+            if (mimeType == null || mimeType == "application/octet-stream") {
+                downloadAsImage(url)
+            } else {
+                iniciarDownload(url, contentDisposition, mimeType)
+            }
+        }
+
+        myWebView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                val url = request?.url.toString()
+                if (url.contains("ads")) {
+                    Toast.makeText(applicationContext, "Anúncio bloqueado", Toast.LENGTH_SHORT).show()
+                    return true
+                }
+                if (URLUtil.isNetworkUrl(url) && (url.endsWith(".png") || url.endsWith(".jpg") || url.endsWith(".jpeg"))) {
+                    downloadAsImage(url)
+                    return true
+                }
+                view?.loadUrl(url)
+                return true
+            }
+        }
+
+        myWebView.loadUrl("https://duckduckgo.com/?t=ofa")
+
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1)
+        }
+    }
+
+    private fun downloadAsImage(url: String) {
+        val request = DownloadManager.Request(Uri.parse(url)).apply {
+            setAllowedOverRoaming(false)
+            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            setTitle("Imagem")
+            setDescription("Baixando imagem como PNG/JPEG")
+            setMimeType("image/png")
+            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "imagem_baixada.png")
+        }
+        val downloadManager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+        downloadManager.enqueue(request)
+        Toast.makeText(applicationContext, "Iniciando", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun iniciarDownload(url: String, contentDisposition: String?, mimeType: String?) {
+        val request = DownloadManager.Request(Uri.parse(url)).apply {
+            setAllowedOverRoaming(false)
+            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            setTitle(URLUtil.guessFileName(url, contentDisposition, mimeType))
+            setDescription("Baixando arquivo...")
+            setMimeType(mimeType ?: "image/png")
+            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, URLUtil.guessFileName(url, contentDisposition, mimeType))
+        }
+        val downloadManager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+        downloadManager.enqueue(request)
+        Toast.makeText(applicationContext, "Download iniciado...", Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK && myWebView.canGoBack()) {
+            myWebView.goBack()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+}
